@@ -12,8 +12,15 @@ import (
 )
 
 func run(options runOptions) error {
-	config, err := os.ReadFile(options.configPath)
+	config, err := readConfig(options.configPath, options.configSHA256)
 	if err != nil {
+		return err
+	}
+	logs, err := logFiles(config)
+	if err != nil {
+		return err
+	}
+	if err := checkWriteTargets(logs...); err != nil {
 		return err
 	}
 	if err := dns.SetDNS(options.dns, options.interfaceName); err != nil {

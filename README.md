@@ -90,7 +90,7 @@ Linux and Windows builds also produce `bin/xray` or `bin/xray.exe`. This
 session Core protects Go DNS lookups from the VPN route and accepts only:
 
 ```shell
-xray run -dns <IP:port> -interface <name> -config <xray.json> [-error-file <path>]
+xray run -dns <IP:port> -interface <name> -config <xray.json> [-config-sha256 <hex>] [-error-file <path>]
 ```
 
 The `-dns`, `-interface`, and `-config` options are required. `-dns` must be an IP endpoint, and `-config`
@@ -103,6 +103,14 @@ Callers launching an elevated Core should create the file first under their own
 account so they retain read access. This is an error-return channel, not Xray's
 access/error log configuration, and it does not add a separate validation pass.
 Applications using this option must bundle a desktop Core built with its support.
+
+The optional `-config-sha256` makes the Core read the configuration once and
+refuse to start unless its SHA-256 matches. An elevated Core reads its
+configuration from a folder the unprivileged caller controls; without the hash,
+anything running as that user could swap the file before the Core reads it and
+choose, for example, where the privileged Core writes logs. On Windows the Core
+also refuses to write `-error-file` and the configured access/error logs through
+a symbolic link, a junction, or a file with other hard links.
 
 > [!WARNING]
 > **Use only one Go runtime per process.** Go does not support loading multiple

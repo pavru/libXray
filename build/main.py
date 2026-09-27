@@ -6,11 +6,13 @@ from app.android import AndroidBuilder
 from app.apple_go import AppleGoBuilder
 from app.apple_gomobile import AppleGoMobileBuilder
 from app.build import resolve_xray_core_ref
+from app.desktop_core import DesktopCoreBuilder
 from app.linux import LinuxBuilder
 from app.windows import WindowsBuilder
 
 LOCAL_ARG = "local"
 RESOLVE_XRAY_CORE_COMMAND = "resolve-xray-core"
+DESKTOP_CORE_COMMAND = "core"
 
 
 def build_dir_path():
@@ -63,6 +65,13 @@ if __name__ == "__main__":
     elif platform == "windows":
         use_local_xray_core = parse_local_arg(sys.argv[2:])
         builder = WindowsBuilder(build_dir_path(), use_local_xray_core)
+        builder.build()
+
+    elif platform == DESKTOP_CORE_COMMAND:
+        if len(sys.argv) < 3:
+            raise Exception(f"usage: main.py {DESKTOP_CORE_COMMAND} <windows|linux> [local]")
+        use_local_xray_core = parse_local_arg(sys.argv[3:])
+        builder = DesktopCoreBuilder(build_dir_path(), sys.argv[2], use_local_xray_core)
         builder.build()
 
     else:

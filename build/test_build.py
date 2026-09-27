@@ -1,5 +1,6 @@
 """Run: python3 build/test_build.py. No Go or platform build is run."""
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -8,6 +9,7 @@ from unittest.mock import call, patch
 from uuid import uuid4
 
 from app.android import AndroidBuilder
+from app.desktop_core import DesktopCoreBuilder
 from app.build import (
     DEFAULT_XRAY_CORE_VERSION,
     XRAY_CORE_REPOSITORY,
@@ -159,6 +161,27 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(metadata, {"requestedRef": None, "local": False,
                                     "version": DEFAULT_XRAY_CORE_VERSION,
                                     "revision": "52a412d9e2f5"})
+
+    def test_desktop_core_cross_compiles_only_the_core(self):
+        (self.root / "go.mod").write_text("original module\n")
+        builder = DesktopCoreBuilder(str(self.root / "build"), "windows")
+        seen = {}
+
+        def build_bin(file_name):
+            seen["file"] = file_name
+            seen["goos"] = os.environ.get("GOOS")
+            (self.root / "go.mod").write_text("effective module\n")
+
+        with patch.dict("os.environ", {"GOOS": "linux"}), \
+                patch.object(builder, "before_build") as before_build, \
+                patch.object(builder, "build_desktop_bin", side_effect=build_bin):
+            builder.build()
+            self.assertEqual(os.environ["GOOS"], "linux")
+        before_build.assert_called_once()
+        self.assertEqual(seen, {"file": "xray.exe", "goos": "windows"})
+        self.assertEqual((self.root / "go.mod").read_text(), "original module\n")
+        with self.assertRaisesRegex(Exception, "not supported"):
+            DesktopCoreBuilder(str(self.root / "build"), "android")
 
     def test_requested_ref_cannot_replace_local_checkout(self):
         with patch.dict("app.build.os.environ", {"LIBXRAY_XRAY_CORE_REF": "v26.9.9"}):

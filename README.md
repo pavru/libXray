@@ -94,6 +94,12 @@ python3 build/main.py resolve-xray-core v26.9.9   # prints the resolved go get q
 Every build writes `xray-core.json` with the requested ref, whether a local
 checkout was used, the resolved module version, and its commit when known.
 
+`python3 build/main.py core <windows|linux> [local]` builds only the desktop
+session Core (`bin/xray.exe` or `bin/xray`) without the cgo library or Geo data.
+It is pure Go, so it cross-compiles from any host; set `GOARCH` for the target
+architecture. Combine it with `LIBXRAY_XRAY_CORE_REF` to publish one Core per
+Xray-core version.
+
 Linux and Windows builds also produce `bin/xray` or `bin/xray.exe`. This
 session Core protects Go DNS lookups from the VPN route and accepts only:
 

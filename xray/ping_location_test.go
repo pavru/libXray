@@ -35,7 +35,8 @@ func TestPingBatchLocationUsesEachForcedOutbound(t *testing.T) {
 	if second.Success || second.LocationJSON != nil || second.LocationError == "" {
 		t.Fatalf("blocked outbound escaped through another client: %+v", second)
 	}
-	if heads.Load() != 1 || gets.Load() != 1 {
+	// The reachable outbound sends a cold and a warm latency probe.
+	if heads.Load() != 2 || gets.Load() != 1 {
 		t.Fatalf("requests = HEAD %d GET %d", heads.Load(), gets.Load())
 	}
 }

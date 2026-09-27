@@ -1,6 +1,7 @@
 package nodep
 
 import (
+	"context"
 	"math"
 	"net/http"
 	"net/url"
@@ -66,4 +67,33 @@ func PingHTTPRequest(c *http.Client, url string, timeout int) (int64, error) {
 	}
 	response.Body.Close()
 	return delay, nil
+}
+
+// PingHTTPRequestWarm measures the request round trip without connection
+// setup. The first request opens the connection and alone decides
+// reachability and timeout; the second reuses it within the remaining
+// timeout. It reports the smaller delay, falling back to the first when the
+// second fails, so a reachable server is never reported as failed.
+// The client must keep connections alive for the second request to reuse one.
+func PingHTTPRequestWarm(c *http.Client, url string, timeout int) (int64, error) {
+	deadline := time.Now().Add(time.Second * time.Duration(timeout))
+	first, err := PingHTTPRequest(c, url, timeout)
+	if err != nil {
+		return first, err
+	}
+
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "HEAD", url, nil)
+	if err != nil {
+		return first, nil
+	}
+	start := time.Now()
+	response, err := c.Do(req)
+	if err != nil {
+		return first, nil
+	}
+	second := time.Since(start).Milliseconds()
+	response.Body.Close()
+	return min(first, second), nil
 }

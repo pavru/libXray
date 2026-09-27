@@ -370,8 +370,10 @@ func probeOutbound(
 	locationURL string,
 ) PingBatchResult {
 	httpTimeout := time.Second * time.Duration(timeout)
+	// Keep the probe connection alive: a reused connection measures the
+	// round trip through the outbound without its TCP, REALITY/TLS and target
+	// TLS handshakes, like other clients report it.
 	transport := &http.Transport{
-		DisableKeepAlives: true,
 		DialContext: func(
 			ctx context.Context,
 			network string,
@@ -394,7 +396,7 @@ func probeOutbound(
 		Transport: transport,
 		Timeout:   httpTimeout,
 	}
-	delay, err := nodep.PingHTTPRequest(client, targetURL, timeout)
+	delay, err := nodep.PingHTTPRequestWarm(client, targetURL, timeout)
 	result := PingBatchResult{Success: true, Delay: delay}
 	if err != nil {
 		result = failedPingBatchResult(delay, err)

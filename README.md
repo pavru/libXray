@@ -504,6 +504,12 @@ Each request accepts at most five configurations and tests all accepted
 configurations concurrently. Requests containing more than five configurations
 fail before any configuration is tested.
 
+Latency is measured over one kept-alive connection: a first HEAD opens it and
+alone decides success and timeout, then a second HEAD reuses it within the
+remaining timeout. `delay` is the smaller of the two, so it excludes the TCP,
+REALITY/TLS and target TLS handshakes, matching the "real delay" of other
+clients. If the second request fails, the first delay is reported.
+
 The top-level response succeeds when the batch itself was accepted. Each item
 has its own result; `delay` is `10000` for an error and `11000` for a timeout.
 `delay` is always present, including a successful zero-millisecond result.
@@ -513,7 +519,7 @@ included automatically. Xray-core rejects the removed `proxySettings` field.
 
 `locationUrl` is optional and must be an absolute HTTP(S) URL. When omitted,
 no location request is made and no location fields are returned. When supplied,
-each prepared item sends its latency HEAD and then its location GET using the
+each prepared item sends its latency HEADs and then its location GET using the
 same client forced through that item's selected outbound and dependencies.
 Each request has the configured timeout (so an item may take up to twice it).
 Location time is not included in `delay`, and the two results are independent:

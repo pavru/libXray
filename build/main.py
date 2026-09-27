@@ -5,10 +5,12 @@ import sys
 from app.android import AndroidBuilder
 from app.apple_go import AppleGoBuilder
 from app.apple_gomobile import AppleGoMobileBuilder
+from app.build import resolve_xray_core_ref
 from app.linux import LinuxBuilder
 from app.windows import WindowsBuilder
 
 LOCAL_ARG = "local"
+RESOLVE_XRAY_CORE_COMMAND = "resolve-xray-core"
 
 
 def build_dir_path():
@@ -26,6 +28,13 @@ def parse_local_arg(args: list[str]) -> bool:
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == [RESOLVE_XRAY_CORE_COMMAND]:
+        # Prints only the resolved query so CI can capture it.
+        if len(sys.argv) != 3 or not sys.argv[2].strip():
+            raise Exception(f"usage: main.py {RESOLVE_XRAY_CORE_COMMAND} <ref>")
+        print(resolve_xray_core_ref(sys.argv[2].strip()))
+        sys.exit(0)
+
     print(sys.argv)
     platform = sys.argv[1]
 

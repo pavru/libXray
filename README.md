@@ -70,6 +70,22 @@ Builds restore `go.mod` and `go.sum` on success or failure. Gomobile builds
 resolve `latest` by default; set `LIBXRAY_GOMOBILE_VERSION` to select a Go module
 version. Both `gomobile` and `gobind` use that resolved version.
 
+Set `LIBXRAY_XRAY_CORE_REF` to build another Xray-core revision instead of the
+pinned one. It accepts a release tag (`v26.9.9`), a branch, a commit hash, or a
+Go module version such as a pseudo-version. Release tags and branches are
+resolved to commits with `git ls-remote`, because Xray-core's `v26.x` tags do not
+match its module path's major version. The variable cannot be combined with
+`local`. Older revisions may not provide the Xray-core APIs libXray uses; such
+builds fail at compile time.
+
+```shell
+LIBXRAY_XRAY_CORE_REF=v26.9.9 python3 build/main.py android
+python3 build/main.py resolve-xray-core v26.9.9   # prints the resolved go get query
+```
+
+Every build writes `xray-core.json` with the requested ref, whether a local
+checkout was used, the resolved module version, and its commit when known.
+
 Linux and Windows builds also produce `bin/xray` or `bin/xray.exe`. This
 session Core protects Go DNS lookups from the VPN route and accepts only:
 

@@ -30,3 +30,6 @@ test/
 config/
 .DS_Store
 bin/
+
+# Xray-core build input recorded for provenance
+xray-core.json

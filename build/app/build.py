@@ -1,4 +1,6 @@
+import json
 import os.path
+import re
 import subprocess
 
 from app.cmd import (
@@ -9,9 +11,41 @@ from app.cmd import (
 
 LIBXRAY_MOD_NAME = "github.com/xtls/libxray"
 XRAY_CORE_MOD_NAME = "github.com/xtls/xray-core"
+XRAY_CORE_REPOSITORY = "https://github.com/XTLS/Xray-core"
 # Go modules resolve the Xray-core v26.9.9 release tag through this version.
 DEFAULT_XRAY_CORE_VERSION = "v1.260327.1-0.20260908222543-52a412d9e2f5"
 LOCAL_XRAY_CORE_DIR_NAME = "Xray-core"
+XRAY_CORE_REF_ENV = "LIBXRAY_XRAY_CORE_REF"
+XRAY_CORE_METADATA_FILE = "xray-core.json"
+
+_COMMIT = re.compile(r"[0-9a-f]{7,40}")
+# Xray-core release tags (v26.x) do not match the module path's major version,
+# so only v0/v1 versions, including pseudo-versions, are valid go get queries.
+_GO_VERSION = re.compile(r"v[01]\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?")
+_PSEUDO_REVISION = re.compile(r"\d{14}-([0-9a-f]{12})$")
+
+
+def resolve_xray_core_ref(ref: str) -> str:
+    """Returns a go get query for an Xray-core tag, branch, commit or Go version."""
+    if _COMMIT.fullmatch(ref) or _GO_VERSION.fullmatch(ref):
+        return ref
+    tag, branch = f"refs/tags/{ref}", f"refs/heads/{ref}"
+    result = subprocess.run(
+        ["git", "ls-remote", XRAY_CORE_REPOSITORY, tag, f"{tag}^{{}}", branch],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise Exception(f"resolve xray-core ref failed: {ref}")
+    commits = {}
+    for line in result.stdout.splitlines():
+        commit, _, name = line.partition("\t")
+        commits[name] = commit
+    # An annotated tag resolves to its peeled commit, not the tag object.
+    for name in (f"{tag}^{{}}", tag, branch):
+        if name in commits:
+            return commits[name]
+    raise Exception(f"xray-core ref not found: {ref}")
 
 
 class Builder(object):
@@ -24,6 +58,7 @@ class Builder(object):
             os.path.join(self.lib_dir, self.xray_core_replace_path)
         )
         self._go_env_snapshot = None
+        self.xray_core_ref = os.environ.get(XRAY_CORE_REF_ENV, "").strip()
 
     def snapshot_go_env(self):
         paths = [
@@ -62,7 +97,11 @@ class Builder(object):
             delete_dir_if_exists(dir_path)
 
     def prepare_xray_core(self):
+        # Never report metadata left over from an earlier build.
+        delete_file_if_exists(os.path.join(self.lib_dir, XRAY_CORE_METADATA_FILE))
         if self.use_local_xray_core:
+            if self.xray_core_ref:
+                raise Exception(f"{XRAY_CORE_REF_ENV} cannot be combined with local")
             if not os.path.isdir(self.xray_core_dir):
                 raise Exception(f"local Xray-core dir not found: {self.xray_core_dir}")
 
@@ -91,9 +130,12 @@ class Builder(object):
             if ret.returncode != 0:
                 raise Exception("go mod edit dropreplace failed")
 
-            ret = subprocess.run(
-                ["go", "get", f"{XRAY_CORE_MOD_NAME}@{DEFAULT_XRAY_CORE_VERSION}"]
+            version = (
+                resolve_xray_core_ref(self.xray_core_ref)
+                if self.xray_core_ref
+                else DEFAULT_XRAY_CORE_VERSION
             )
+            ret = subprocess.run(["go", "get", f"{XRAY_CORE_MOD_NAME}@{version}"])
             if ret.returncode != 0:
                 raise Exception("go get xray-core failed")
 
@@ -106,6 +148,40 @@ class Builder(object):
         )
         if ret.returncode != 0:
             raise Exception("go mod tidy failed")
+        self.write_xray_core_metadata()
+
+    def write_xray_core_metadata(self):
+        """Records the Xray-core build input; go.mod is restored after the build."""
+        if self.use_local_xray_core:
+            version = "local"
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=self.xray_core_dir,
+                capture_output=True,
+                text=True,
+            )
+            revision = result.stdout.strip() if result.returncode == 0 else None
+        else:
+            result = subprocess.run(
+                ["go", "list", "-m", "-f", "{{.Version}}", XRAY_CORE_MOD_NAME],
+                capture_output=True,
+                text=True,
+            )
+            version = result.stdout.strip()
+            if result.returncode != 0 or not version:
+                raise Exception("resolve xray-core module version failed")
+            match = _PSEUDO_REVISION.search(version)
+            revision = match.group(1) if match else None
+        metadata = {
+            "requestedRef": self.xray_core_ref or None,
+            "local": self.use_local_xray_core,
+            "version": version,
+            "revision": revision,
+        }
+        path = os.path.join(self.lib_dir, XRAY_CORE_METADATA_FILE)
+        with open(path, "w", encoding="utf-8") as file:
+            json.dump(metadata, file, indent=2)
+            file.write("\n")
 
     def download_geo(self):
         os.chdir(self.lib_dir)

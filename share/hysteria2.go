@@ -156,22 +156,20 @@ func parseHysteria2Link(text string) (*conf.OutboundDetourConfig, error) {
 				return nil, errHysteria2Link
 			}
 		}
-		raw, err := convertJsonToRawMessage(&conf.UDPHop{
-			Mode: "intervalLocal,intervalRemote", RemotePorts: ports,
-			Interval: conf.Int32Range{Left: int32(interval), Right: int32(interval), From: int32(interval), To: int32(interval)},
-		})
-		if err != nil {
+		if err := addHysteria2Hop(mask, ports, int32(interval)); err != nil {
 			return nil, err
 		}
-		// The core wraps UDP masks in reverse order; hopping must wrap the raw socket.
-		mask.Udp = append(mask.Udp, conf.Mask{Type: "udphop", Settings: &raw})
 	} else if query.Has("hop-interval") {
 		return nil, errHysteria2Link
 	}
 	if query.Get("up") != "" || query.Get("down") != "" {
-		mask.QuicParams = &conf.QuicParamsConfig{
-			Congestion: "brutal", BrutalUp: conf.Bandwidth(query.Get("up")), BrutalDown: conf.Bandwidth(query.Get("down")),
+		// Older cores already keep port hopping in quicParams.
+		if mask.QuicParams == nil {
+			mask.QuicParams = &conf.QuicParamsConfig{}
 		}
+		mask.QuicParams.Congestion = "brutal"
+		mask.QuicParams.BrutalUp = conf.Bandwidth(query.Get("up"))
+		mask.QuicParams.BrutalDown = conf.Bandwidth(query.Get("down"))
 	}
 	if len(mask.Udp) > 0 || mask.QuicParams != nil {
 		stream.FinalMask = mask
@@ -192,8 +190,8 @@ func hysteria2ShareLink(outbound conf.OutboundDetourConfig) (*url.URL, error) {
 		return nil, errHysteria2Link
 	}
 	network := stream.Network
-	if stream.Method != nil {
-		network = stream.Method
+	if method := streamMethod(stream); method != nil {
+		network = method
 	}
 	if network == nil || *network != "hysteria" {
 		return nil, errHysteria2Link
@@ -239,26 +237,42 @@ func hysteria2ShareLink(outbound conf.OutboundDetourConfig) (*url.URL, error) {
 				query.Set("obfs", "salamander")
 				query.Set("obfs-password", obfs.Password)
 			case "udphop":
-				var hop conf.UDPHop
+				var hop udpHopMask
 				if err := json.Unmarshal(*entry.Settings, &hop); err != nil || index != len(mask.Udp)-1 ||
-					hop.Mode != "intervalLocal,intervalRemote" || len(hop.RemoteIPs) > 0 || hop.Sockopt != nil ||
-					hop.Interval.From < 5 || hop.Interval.From != hop.Interval.To {
+					hop.Mode != "intervalLocal,intervalRemote" || len(hop.RemoteIPs) > 0 || hop.Sockopt != nil {
 					return nil, errHysteria2Link
 				}
-				ports, err := hysteria2Ports(hop.RemotePorts.String())
-				if err != nil || (len(ports.Range) == 1 && ports.Range[0].From == ports.Range[0].To) {
-					return nil, errHysteria2Link
-				}
-				link.Host = net.JoinHostPort(host, ports.String())
-				if hop.Interval.From != 30 {
-					query.Set("hop-interval", strconv.Itoa(int(hop.Interval.From)))
+				if err := exportHysteria2Hop(link, query, host, hop.RemotePorts, hop.Interval); err != nil {
+					return nil, err
 				}
 			default:
 				return nil, errHysteria2Link
+			}
+		}
+		if ports, interval, ok := legacyHysteria2Hop(mask); ok {
+			if err := exportHysteria2Hop(link, query, host, ports, interval); err != nil {
+				return nil, err
 			}
 		}
 		// QUIC bandwidth/tuning is client-local, not part of a standard share URI.
 	}
 	link.RawQuery = strings.ReplaceAll(query.Encode(), "+", "%20")
 	return link, nil
+}
+
+// exportHysteria2Hop writes a standard multi-port authority and hop interval.
+func exportHysteria2Hop(link *url.URL, query url.Values, host string, remotePorts conf.PortList,
+	interval conf.Int32Range) error {
+	if interval.From < 5 || interval.From != interval.To {
+		return errHysteria2Link
+	}
+	ports, err := hysteria2Ports(remotePorts.String())
+	if err != nil || (len(ports.Range) == 1 && ports.Range[0].From == ports.Range[0].To) {
+		return errHysteria2Link
+	}
+	link.Host = net.JoinHostPort(host, ports.String())
+	if interval.From != 30 {
+		query.Set("hop-interval", strconv.Itoa(int(interval.From)))
+	}
+	return nil
 }

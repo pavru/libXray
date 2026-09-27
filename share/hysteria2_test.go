@@ -86,10 +86,16 @@ func TestHysteria2LegacyPortQueriesAndBandwidth(t *testing.T) {
 		mask := config.OutboundConfigs[0].StreamSetting.FinalMask
 		require.NotNil(t, mask)
 		assert.Equal(t, conf.Bandwidth("50 mbps"), mask.QuicParams.BrutalUp)
-		var hop conf.UDPHop
-		require.NoError(t, json.Unmarshal(*mask.Udp[0].Settings, &hop))
-		assert.Equal(t, "intervalLocal,intervalRemote", hop.Mode)
-		assert.Equal(t, int32(30), hop.Interval.From)
+		if ports, interval, ok := legacyHysteria2Hop(mask); legacyUDPHop {
+			require.True(t, ok)
+			assert.Equal(t, "5000-5002", ports.String())
+			assert.Equal(t, int32(30), interval.From)
+		} else {
+			var hop udpHopMask
+			require.NoError(t, json.Unmarshal(*mask.Udp[0].Settings, &hop))
+			assert.Equal(t, "intervalLocal,intervalRemote", hop.Mode)
+			assert.Equal(t, int32(30), hop.Interval.From)
+		}
 		link, err := shareLink(config.OutboundConfigs[0])
 		require.NoError(t, err)
 		assert.Contains(t, link.String(), "host:5000-5002")
@@ -145,7 +151,7 @@ func TestHysteria2ExportRejectsUnrepresentableSecurityAndMasks(t *testing.T) {
 		func(s *conf.StreamConfig) { s.TLSSettings.AllowInsecure = true },
 		func(s *conf.StreamConfig) { s.TLSSettings.DisableSystemRoot = true },
 		func(s *conf.StreamConfig) { s.TLSSettings.MinVersion = "1.3" },
-		func(s *conf.StreamConfig) { s.Method = new(conf.TransportProtocol("ws")) },
+		func(s *conf.StreamConfig) { setStreamMethodForTest(s, "ws") },
 		func(s *conf.StreamConfig) { s.FinalMask = &conf.FinalMask{Udp: []conf.Mask{{Type: "noise"}}} },
 		func(s *conf.StreamConfig) {
 			raw := json.RawMessage(`{"password":"secret","packetSize":"100-200"}`)
@@ -169,6 +175,9 @@ func TestHysteria2ExportRejectsUnrepresentableSecurityAndMasks(t *testing.T) {
 func TestHysteria2PortHoppingReceivesAfterHop(t *testing.T) {
 	if testing.Short() {
 		t.Skip("waits for a real local UDP hop")
+	}
+	if legacyUDPHop {
+		t.Skip("the linked Xray-core has no udphop finalmask")
 	}
 	server, err := net.ListenPacket("udp", "127.0.0.1:0")
 	require.NoError(t, err)

@@ -78,14 +78,6 @@ match its module path's major version. The variable cannot be combined with
 `local`. Older revisions may not provide the Xray-core APIs libXray uses; such
 builds fail at compile time.
 
-`share/xray_compat.go` keeps libXray building against older Xray-core releases
-(verified with v26.6.27 and v26.7.28): it
-detects through reflection whether the linked core has `streamSettings.method`
-and whether Hysteria2 port hopping lives in `finalmask.quicParams.udpHop` or in a
-`udphop` `finalmask.udp` entry, and converts share links in that core's format.
-Configuration features the older core lacks, such as newer `quicParams` options,
-`method`, or UDP-hop `sockopt`, are not available with it.
-
 ```shell
 LIBXRAY_XRAY_CORE_REF=v26.9.9 python3 build/main.py android
 python3 build/main.py resolve-xray-core v26.9.9   # prints the resolved go get query

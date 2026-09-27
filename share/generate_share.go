@@ -226,8 +226,8 @@ func streamSettingsQuery(proxy conf.OutboundDetourConfig, link *url.URL) {
 	if streamSettings.Network != nil {
 		network = string(*streamSettings.Network)
 	}
-	if method := streamMethod(streamSettings); method != nil {
-		network = string(*method)
+	if streamSettings.Method != nil {
+		network = string(*streamSettings.Method)
 	}
 	if canonical, ok := canonicalShareNetwork(network); ok {
 		network = canonical

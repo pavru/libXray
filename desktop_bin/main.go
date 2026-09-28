@@ -40,5 +40,8 @@ func run(options runOptions) error {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "service" {
+		os.Exit(serviceCommand(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	os.Exit(execute(os.Args[1:], run, os.Stdout, os.Stderr))
 }

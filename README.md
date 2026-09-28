@@ -112,6 +112,63 @@ choose, for example, where the privileged Core writes logs. On Windows the Core
 also refuses to write `-error-file` and the configured access/error logs through
 a symbolic link, a junction, or a file with other hard links.
 
+### Windows Core service
+
+On Windows the same executable can run as a service, so that an unprivileged
+App starts and stops the Core without a UAC prompt for every connection. An
+installer running as administrator registers it once; `uninstall` stops the
+Core, removes the service and its data folder:
+
+```shell
+xray service install -name <service> -display <name> -pipe <pipe> -client <App.exe>
+xray service uninstall -name <service>
+```
+
+The service runs as SYSTEM and starts at boot. It serves `\\.\pipe\<pipe>`,
+where each connection carries one request and one response, each a 4-byte
+little-endian length followed by JSON:
+
+| Request | Answer |
+| --- | --- |
+| `{"command":"start","config":"<Xray JSON>","dns":"<IP:port>","interface":"<name>","assets":"<Geodata folder>"}` | after the Core has run for one second, or with its startup error |
+| `{"command":"stop"}` | once the Core has exited |
+| `{"command":"status"}` | at once |
+| `{"command":"watch","known":"running"}` | when the state differs from `known`, or after 25 seconds |
+
+Every answer is `{"ok":<bool>,"state":"running|stopped","error":"<text>"}`;
+with `ok` false, `error` says why the request failed, otherwise it holds the
+last Core failure.
+
+Who may use it:
+
+- The pipe rejects remote clients. Interactive users may connect but not create
+  instances of the pipe, so no user can impersonate the service. Clients open it
+  with `GENERIC_READ | FILE_WRITE_DATA`, retry while it answers
+  `ERROR_PIPE_BUSY`, and should check that SYSTEM or Administrators own it.
+- Only `<App.exe>` from the service's own folder is served. This keeps other
+  programs away, but it is no boundary against code already running as that
+  user.
+- A Core started from one Windows session can be replaced or stopped only from
+  that session or by an elevated administrator. It stops when that session
+  logs off.
+
+What a configuration may do, because the Core runs as SYSTEM:
+
+- The service writes the configuration to its folder in SYSTEM's profile
+  (`%SystemRoot%\System32\config\systemprofile\AppData\Local\<service>`) and
+  runs `xray run` there, in a job that ends with the service.
+- `log.access` and `log.error` must be `none`, empty, or `logs\access.log` and
+  `logs\error.log` in that folder. The `logs` folder is recreated for each start;
+  only SYSTEM and Administrators may write in it, and the requesting user may
+  read it.
+- `env` is replaced: assets and certificates come from a private copy of the
+  `.dat` files in `assets` (at most 64 files and 256 MB), which the service
+  opens as the requesting user, so it never reads a file that user could not.
+- Fields that name other files (`certificateFile`, `keyFile`, `masterKeyLog`,
+  the Hysteria masquerade `dir`) or a Unix socket (`listen`, `dest`, `address`
+  without `://` but with a path or `@`) are refused. Review this list when
+  updating Xray-core.
+
 > [!WARNING]
 > **Use only one Go runtime per process.** Go does not support loading multiple
 > independently built Go runtimes into one process. Every native libXray
